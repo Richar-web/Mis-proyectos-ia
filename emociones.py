@@ -1,14 +1,14 @@
-import os
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
-
 import streamlit as st
-from deepface import DeepFace
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 from PIL import Image
 import tempfile
+import os
+from fer import FER
+
+detector = FER(mtcnn=False)
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -25,7 +25,7 @@ def mostrar_emociones():
 
     archivo = st.file_uploader(
         "Sube tu imagen",
-        type=["jpg","jpeg","png","webp","avif"]
+        type=["jpg","jpeg","png","webp"]
     )
 
     if archivo is not None:
@@ -37,6 +37,7 @@ def mostrar_emociones():
         gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray_eq = cv2.equalizeHist(gray)
 
+        # Verificar que haya rostro
         faces = face_cascade.detectMultiScale(
             gray_eq, scaleFactor=1.1, minNeighbors=6, minSize=(60,60)
         )
@@ -52,30 +53,28 @@ def mostrar_emociones():
             return
 
         with st.spinner("Analizando emoción..."):
-            resultados = DeepFace.analyze(
-                img_path          = fname,
-                actions           = ['emotion'],
-                detector_backend  = 'ssd',
-                enforce_detection = False
-            )
+            resultados = detector.detect_emotions(img_rgb)
 
         img_h, img_w = img.shape[:2]
         fig, ax = plt.subplots(figsize=(10, 7))
         ax.imshow(img_rgb)
         conteo = []
 
+        if not resultados:
+            st.warning("⚠️ No se detectó ningún rostro humano en la imagen.")
+            st.image(img_rgb)
+            os.unlink(fname)
+            return
+
         for result in resultados:
-            region = result['region']
-            x, y, w, h = region['x'], region['y'], region['w'], region['h']
+            x, y, w, h = result['box']
 
             if (w * h) / (img_w * img_h) > 0.80:
-                st.warning("⚠️ No se detectó ningún rostro humano en la imagen.")
-                st.image(img_rgb)
-                os.unlink(fname)
-                return
+                continue
 
-            emocion   = result['dominant_emotion']
-            confianza = result['emotion'][emocion]
+            emociones_dict = result['emotions']
+            emocion        = max(emociones_dict, key=emociones_dict.get)
+            confianza      = emociones_dict[emocion] * 100
 
             ax.add_patch(plt.Rectangle(
                 (x, y), w, h, fill=False, color='green', linewidth=2
@@ -95,7 +94,7 @@ def mostrar_emociones():
             return
 
         ax.axis('off')
-        ax.set_title("Analizador de Emociones — TensorFlow + DeepFace", fontsize=13)
+        ax.set_title("Analizador de Emociones — TensorFlow + FER", fontsize=13)
         plt.tight_layout()
         st.pyplot(fig)
 
