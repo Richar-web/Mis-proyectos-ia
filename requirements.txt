@@ -1,6 +1,5 @@
 streamlit
-deepface
-tf-keras
+fer
 opencv-python-headless
 matplotlib
 pillow
