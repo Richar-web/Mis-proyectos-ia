@@ -14,7 +14,8 @@ eye_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_eye.xml'
 )
 
-EMOCIONES  = ['angry','disgust','fear','happy','neutral','sad','surprise']
+# Orden correcto de etiquetas para el modelo FERPlus
+EMOCIONES  = ['neutral','happy','surprise','fear','disgust','angry','sad','contempt']
 MODEL_PATH = "/mount/src/mis-proyectos-ia/emotion_model.onnx"
 
 @st.cache_resource
@@ -39,7 +40,8 @@ def predecir_emocion(session, face_rgb):
     exp   = np.exp(out - out.max())
     probs = exp / exp.sum()
     idx   = int(np.argmax(probs))
-    return EMOCIONES[idx], float(probs[idx]) * 100
+    emocion = EMOCIONES[idx] if idx < len(EMOCIONES) else 'neutral'
+    return emocion, float(probs[idx]) * 100
 
 def es_rostro_real(gray_rostro):
     h     = gray_rostro.shape[0]
