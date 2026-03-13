@@ -7,6 +7,55 @@ from PIL import Image
 import tempfile
 import os
 
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+)
+eye_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_eye.xml'
+)
+
+# Orden correcto de etiquetas para el modelo FERPlus
+EMOCIONES  = ['neutral','happy','surprise','fear','disgust','angry','sad','contempt']
+MODEL_PATH = "/mount/src/mis-proyectos-ia/emotion_model.onnx"
+
+@st.cache_resource
+def cargar_modelo():
+    import onnxruntime as ort
+    return ort.InferenceSession(MODEL_PATH)
+
+def preprocesar_rostro(face_rgb):
+    gray = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2GRAY)
+    gray = cv2.resize(gray, (64, 64))
+    gray = gray.astype(np.float32)
+    gray -= gray.mean()
+    std  = gray.std()
+    if std > 0:
+        gray /= std
+    return gray.reshape(1, 1, 64, 64)
+
+def predecir_emocion(session, face_rgb):
+    inp   = preprocesar_rostro(face_rgb)
+    name  = session.get_inputs()[0].name
+    out   = session.run(None, {name: inp})[0][0]
+    exp   = np.exp(out - out.max())
+    probs = exp / exp.sum()
+    idx   = int(np.argmax(probs))
+    emocion = EMOCIONES[idx] if idx < len(EMOCIONES) else 'neutral'
+    return emocion, float(probs[idx]) * 100
+
+def es_rostro_real(gray_rostro):
+    h     = gray_rostro.shape[0]
+    mitad = gray_rostro[:h//2, :]
+    ojos  = eye_cascade.detectMultiScale(
+        mitad, scaleFactor=1.1, minNeighbors=3, minSize=(10,10)
+    )
+    return len(ojos) >= 1
+
+def convertir_a_jpg(img_pil):
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        img_pil.convert("RGB").save(f.name, "JPEG")
+        return f.name
+
 def mostrar_emociones():
     st.title("🎭 Detector de Emociones")
     st.write("Sube una imagen con un rostro para analizar su emoción.")
@@ -17,67 +66,77 @@ def mostrar_emociones():
     )
 
     if archivo is not None:
-        from deepface import DeepFace
+        session = cargar_modelo()
 
         img_pil = Image.open(archivo)
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-            img_pil.convert("RGB").save(f.name, "JPEG")
-            fname = f.name
-
-        img = cv2.imread(fname)
+        fname   = convertir_a_jpg(img_pil)
+        img     = cv2.imread(fname)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray_eq = cv2.equalizeHist(gray)
 
-        try:
-            resultados = DeepFace.analyze(
-                img_path=fname,
-                actions=['emotion'],
-                detector_backend='opencv',
-                enforce_detection=False
+        faces = face_cascade.detectMultiScale(
+            gray_eq, scaleFactor=1.1,
+            minNeighbors=6, minSize=(60,60)
+        )
+        if len(faces) == 0:
+            faces = face_cascade.detectMultiScale(
+                gray_eq, scaleFactor=1.05,
+                minNeighbors=3, minSize=(40,40)
             )
 
-            if not isinstance(resultados, list):
-                resultados = [resultados]
-
-            img_h, img_w = img.shape[:2]
-            ratio = img_w / img_h
-            fig_w = min(7, 7 * ratio)
-            fig_h = min(7, 7 / ratio)
-            fig, ax = plt.subplots(figsize=(fig_w, fig_h))
-            ax.imshow(img_rgb)
-            conteo = []
-
-            for r in resultados:
-                emocion = r['dominant_emotion']
-                confianza = r['emotion'][emocion]
-                region = r.get('region', {})
-                x = region.get('x', 0)
-                y = region.get('y', 0)
-                w = region.get('w', img_w)
-                h = region.get('h', img_h)
-
-                ax.add_patch(plt.Rectangle(
-                    (x, y), w, h,
-                    fill=False, color='green', linewidth=2
-                ))
-                ax.text(
-                    x, y - 10,
-                    f"{emocion.upper()} {confianza:.1f}%",
-                    bbox=dict(facecolor='yellow', alpha=0.8),
-                    fontsize=10, color='black', fontweight='bold'
-                )
-                conteo.append(emocion)
-
-            ax.axis('off')
-            ax.set_title("Analizador de Emociones — DeepFace", fontsize=12)
-            plt.tight_layout()
-            st.pyplot(fig)
-
-            st.write("### Resumen Final")
-            for emo, cant in Counter(conteo).items():
-                st.success(f"✅ {emo.capitalize()}: {cant} rostro(s)")
-
-        except Exception as e:
-            st.error(f"Error al analizar: {e}")
+        if len(faces) == 0:
+            st.warning("⚠️ No se detectó ningún rostro humano en la imagen.")
             st.image(img_rgb, use_column_width=True)
+            os.unlink(fname)
+            return
+
+        img_h, img_w = img.shape[:2]
+
+        if len(faces) > 1:
+            faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
+            faces = [faces[0]]
+
+        ratio = img_w / img_h
+        fig_w = min(7, 7 * ratio)
+        fig_h = min(7, 7 / ratio)
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+        ax.imshow(img_rgb)
+        conteo = []
+
+        for (x, y, w, h) in faces:
+            if (w * h) / (img_w * img_h) > 0.80:
+                continue
+            gray_rostro = gray[y:y+h, x:x+w]
+            if not es_rostro_real(gray_rostro):
+                continue
+            rostro_rgb         = img_rgb[y:y+h, x:x+w]
+            emocion, confianza = predecir_emocion(session, rostro_rgb)
+            ax.add_patch(plt.Rectangle(
+                (x, y), w, h,
+                fill=False, color='green', linewidth=2
+            ))
+            ax.text(
+                x, y - 10,
+                f"{emocion.upper()} {confianza:.1f}%",
+                bbox=dict(facecolor='yellow', alpha=0.8),
+                fontsize=10, color='black', fontweight='bold'
+            )
+            conteo.append(emocion)
+
+        if not conteo:
+            st.warning("⚠️ No se detectó ningún rostro humano en la imagen.")
+            st.image(img_rgb, use_column_width=True)
+            os.unlink(fname)
+            return
+
+        ax.axis('off')
+        ax.set_title("Analizador de Emociones — Red Neuronal", fontsize=12)
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        st.write("### Resumen Final")
+        for emo, cant in Counter(conteo).items():
+            st.success(f"✅ {emo.capitalize()}: {cant} rostro(s)")
 
         os.unlink(fname)
