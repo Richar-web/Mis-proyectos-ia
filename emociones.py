@@ -20,34 +20,82 @@ def analizar_emocion(face_img):
     gray = cv2.cvtColor(face_img, cv2.COLOR_RGB2GRAY)
     h, w = gray.shape
 
-    rostro_superior = gray[:h//2, :]
-    rostro_inferior = gray[h//2:, :]
+    # Regiones clave del rostro
+    ceja_izq    = gray[int(h*0.15):int(h*0.30), int(w*0.10):int(w*0.45)]
+    ceja_der    = gray[int(h*0.15):int(h*0.30), int(w*0.55):int(w*0.90)]
+    ojos        = gray[int(h*0.25):int(h*0.45), int(w*0.10):int(w*0.90)]
+    nariz       = gray[int(h*0.40):int(h*0.60), int(w*0.30):int(w*0.70)]
+    boca        = gray[int(h*0.60):int(h*0.82), int(w*0.20):int(w*0.80)]
+    mejilla_izq = gray[int(h*0.45):int(h*0.70), int(w*0.05):int(w*0.30)]
+    mejilla_der = gray[int(h*0.45):int(h*0.70), int(w*0.70):int(w*0.95)]
 
-    brillo_promedio = np.mean(gray)
-    contraste       = np.std(gray)
+    # Detectar bordes (activación muscular)
+    bordes_boca  = cv2.Canny(boca,  30, 100)
+    bordes_ojos  = cv2.Canny(ojos,  30, 100)
+    bordes_cejas = cv2.Canny(
+        np.hstack([ceja_izq, ceja_der]), 30, 100
+    )
 
-    region_ojos  = gray[int(h*0.2):int(h*0.45), int(w*0.1):int(w*0.9)]
-    region_boca  = gray[int(h*0.6):int(h*0.85), int(w*0.2):int(w*0.8)]
-    region_cenos = gray[int(h*0.15):int(h*0.35), int(w*0.2):int(w*0.8)]
+    activacion_boca  = np.sum(bordes_boca)  / (boca.size  + 1)
+    activacion_ojos  = np.sum(bordes_ojos)  / (ojos.size  + 1)
+    activacion_cejas = np.sum(bordes_cejas) / (bordes_cejas.size + 1)
 
-    variacion_boca  = np.std(region_boca)
-    variacion_ojos  = np.std(region_ojos)
-    variacion_cenos = np.std(region_cenos)
-    diferencia_v    = np.mean(rostro_superior) - np.mean(rostro_inferior)
+    # Simetría de mejillas (asimetría = tensión)
+    simetria = abs(np.mean(mejilla_izq) - np.mean(mejilla_der))
 
+    # Brillo general
+    brillo = np.mean(gray) / 255.0
+
+    # Detección de boca abierta (sonrisa amplia / sorpresa)
+    _, boca_thresh = cv2.threshold(boca, 80, 255, cv2.THRESH_BINARY_INV)
+    zona_oscura_boca = np.sum(boca_thresh) / (boca.size * 255 + 1)
+
+    # Detección de ojos muy abiertos (sorpresa / miedo)
+    _, ojos_thresh = cv2.threshold(ojos, 60, 255, cv2.THRESH_BINARY_INV)
+    zona_oscura_ojos = np.sum(ojos_thresh) / (ojos.size * 255 + 1)
+
+    # Puntuación por emoción
     scores = {
-        'happy':   variacion_boca * 1.5 + (brillo_promedio / 255) * 30,
-        'sad':     (1 - brillo_promedio / 255) * 40 + variacion_cenos * 0.8,
-        'angry':   variacion_cenos * 1.4 + contraste * 0.5,
-        'surprise':variacion_ojos * 1.6 + abs(diferencia_v) * 0.4,
-        'fear':    contraste * 0.9 + variacion_cenos * 0.7,
-        'neutral': 100 - contraste * 0.5 - variacion_boca * 0.3,
-        'disgust': variacion_cenos * 1.1 + variacion_boca * 0.6,
+        'happy':    activacion_boca * 3.0
+                  + zona_oscura_boca * 2.5
+                  + brillo * 2.0
+                  - activacion_cejas * 0.5,
+
+        'sad':      activacion_cejas * 2.5
+                  + (1 - brillo) * 2.0
+                  + simetria * 0.03
+                  - activacion_boca * 1.0,
+
+        'angry':    activacion_cejas * 3.0
+                  + simetria * 0.04
+                  + (1 - brillo) * 1.5
+                  - zona_oscura_boca * 0.5,
+
+        'surprise': zona_oscura_boca * 3.5
+                  + zona_oscura_ojos * 2.5
+                  + activacion_ojos * 1.5
+                  - activacion_cejas * 0.5,
+
+        'fear':     zona_oscura_ojos * 2.5
+                  + activacion_cejas * 2.0
+                  + (1 - brillo) * 1.5
+                  - zona_oscura_boca * 0.3,
+
+        'neutral':  max(0, 2.0
+                  - activacion_boca * 1.5
+                  - activacion_cejas * 1.5
+                  - zona_oscura_boca * 1.0),
+
+        'disgust':  activacion_cejas * 2.0
+                  + simetria * 0.05
+                  + activacion_boca * 1.0
+                  - brillo * 1.0,
     }
 
-    total    = sum(scores.values())
-    porcentajes = {k: (v / total) * 100 for k, v in scores.items()}
-    emocion  = max(porcentajes, key=porcentajes.get)
+    # Normalizar a porcentajes
+    total = sum(max(v, 0) for v in scores.values()) + 1e-6
+    porcentajes = {k: (max(v, 0) / total) * 100 for k, v in scores.items()}
+    emocion = max(porcentajes, key=porcentajes.get)
     return emocion, porcentajes[emocion]
 
 def mostrar_emociones():
@@ -56,7 +104,7 @@ def mostrar_emociones():
 
     archivo = st.file_uploader(
         "Sube tu imagen",
-        type=["jpg","jpeg","png","webp"]
+        type=["jpg", "jpeg", "png", "webp"]
     )
 
     if archivo is not None:
@@ -69,21 +117,26 @@ def mostrar_emociones():
         gray_eq = cv2.equalizeHist(gray)
 
         faces = face_cascade.detectMultiScale(
-            gray_eq, scaleFactor=1.1, minNeighbors=6, minSize=(60,60)
+            gray_eq, scaleFactor=1.1, minNeighbors=6, minSize=(60, 60)
         )
         if len(faces) == 0:
             faces = face_cascade.detectMultiScale(
-                gray_eq, scaleFactor=1.05, minNeighbors=3, minSize=(40,40)
+                gray_eq, scaleFactor=1.05, minNeighbors=3, minSize=(40, 40)
             )
 
         if len(faces) == 0:
             st.warning("⚠️ No se detectó ningún rostro humano en la imagen.")
-            st.image(img_rgb)
+            st.image(img_rgb, use_column_width=True)
             os.unlink(fname)
             return
 
         img_h, img_w = img.shape[:2]
-        fig, ax = plt.subplots(figsize=(10, 7))
+
+        # Tamaño de figura proporcional a la imagen (máx 8)
+        ratio  = img_w / img_h
+        fig_w  = min(8, 8 * ratio)
+        fig_h  = min(8, 8 / ratio)
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h))
         ax.imshow(img_rgb)
         conteo = []
 
@@ -91,7 +144,7 @@ def mostrar_emociones():
             if (w * h) / (img_w * img_h) > 0.80:
                 continue
 
-            rostro_recortado = img_rgb[y:y+h, x:x+w]
+            rostro_recortado   = img_rgb[y:y+h, x:x+w]
             emocion, confianza = analizar_emocion(rostro_recortado)
 
             ax.add_patch(plt.Rectangle(
@@ -101,18 +154,18 @@ def mostrar_emociones():
                 x, y - 10,
                 f"{emocion.upper()} {confianza:.1f}%",
                 bbox=dict(facecolor='yellow', alpha=0.7),
-                fontsize=11, color='black', fontweight='bold'
+                fontsize=10, color='black', fontweight='bold'
             )
             conteo.append(emocion)
 
         if not conteo:
             st.warning("⚠️ No se detectó ningún rostro humano en la imagen.")
-            st.image(img_rgb)
+            st.image(img_rgb, use_column_width=True)
             os.unlink(fname)
             return
 
         ax.axis('off')
-        ax.set_title("Analizador de Emociones — OpenCV", fontsize=13)
+        ax.set_title("Analizador de Emociones — OpenCV", fontsize=12)
         plt.tight_layout()
         st.pyplot(fig)
 
