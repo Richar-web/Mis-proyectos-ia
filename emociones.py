@@ -6,7 +6,6 @@ from collections import Counter
 from PIL import Image
 import tempfile
 import os
-import requests
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -16,26 +15,11 @@ eye_cascade = cv2.CascadeClassifier(
 )
 
 EMOCIONES  = ['angry','disgust','fear','happy','neutral','sad','surprise']
-MODEL_PATH = "/tmp/emotion_model.onnx"
+MODEL_PATH = "/mount/src/mis-proyectos-ia/emotion_model.onnx"
 
 @st.cache_resource
 def cargar_modelo():
     import onnxruntime as ort
-    if not os.path.exists(MODEL_PATH):
-        with st.spinner("Descargando modelo..."):
-            urls = [
-                "https://huggingface.co/datasets/onnx/emotion-ferplus/resolve/main/emotion-ferplus-8.onnx",
-                "https://raw.githubusercontent.com/onnx/models/main/validated/vision/body_analysis/emotion_ferplus/model/emotion-ferplus-8.onnx",
-            ]
-            for url in urls:
-                try:
-                    r = requests.get(url, timeout=30)
-                    if r.status_code == 200 and len(r.content) > 100000:
-                        with open(MODEL_PATH, 'wb') as f:
-                            f.write(r.content)
-                        break
-                except Exception:
-                    continue
     return ort.InferenceSession(MODEL_PATH)
 
 def preprocesar_rostro(face_rgb):
