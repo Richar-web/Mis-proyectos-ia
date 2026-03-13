@@ -15,42 +15,37 @@ eye_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_eye.xml'
 )
 
-EMOCIONES = ['angry','disgust','fear','happy','neutral','sad','surprise']
+EMOCIONES   = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
+MODEL_URL   = "https://github.com/oarriaga/face_classification/raw/master/trained_models/fer2013_mini_XCEPTION.102-0.66.hdf5"
+MODEL_PATH  = "/tmp/emotion_model.onnx"
 
-MODEL_URL  = "https://github.com/onnx/models/raw/main/validated/vision/body_analysis/emotion_ferplus/model/emotion-ferplus-8.onnx"
-MODEL_PATH = "/tmp/emotion_model.onnx"
+ONNX_URL    = "https://huggingface.co/spaces/asdasdasdasd/Face-forgery-detection/resolve/main/emotions.onnx"
 
 @st.cache_resource
 def cargar_modelo():
     import onnxruntime as ort
     if not os.path.exists(MODEL_PATH):
-        with st.spinner("Descargando modelo de emociones..."):
-            urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-    session = ort.InferenceSession(MODEL_PATH)
-    return session
+        with st.spinner("Descargando modelo..."):
+            urllib.request.urlretrieve(ONNX_URL, MODEL_PATH)
+    return ort.InferenceSession(MODEL_PATH)
 
 def preprocesar_rostro(face_rgb):
-    gray  = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2GRAY)
-    gray  = cv2.resize(gray, (64, 64))
-    gray  = gray.astype(np.float32)
-    gray -= gray.mean()
-    std   = gray.std()
-    if std > 0:
-        gray /= std
-    return gray.reshape(1, 1, 64, 64)
+    gray = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2GRAY)
+    gray = cv2.resize(gray, (48, 48))
+    gray = gray.astype(np.float32) / 255.0
+    return gray.reshape(1, 1, 48, 48)
 
 def predecir_emocion(session, face_rgb):
-    input_data  = preprocesar_rostro(face_rgb)
-    input_name  = session.get_inputs()[0].name
-    outputs     = session.run(None, {input_name: input_data})
-    scores      = outputs[0][0]
-    exp_scores  = np.exp(scores - scores.max())
-    probs       = exp_scores / exp_scores.sum()
-    idx         = int(np.argmax(probs))
+    inp    = preprocesar_rostro(face_rgb)
+    name   = session.get_inputs()[0].name
+    out    = session.run(None, {name: inp})[0][0]
+    exp    = np.exp(out - out.max())
+    probs  = exp / exp.sum()
+    idx    = int(np.argmax(probs))
     return EMOCIONES[idx], float(probs[idx]) * 100
 
 def es_rostro_real(gray_rostro):
-    h = gray_rostro.shape[0]
+    h     = gray_rostro.shape[0]
     mitad = gray_rostro[:h//2, :]
     ojos  = eye_cascade.detectMultiScale(
         mitad, scaleFactor=1.1, minNeighbors=3, minSize=(10, 10)
@@ -76,7 +71,6 @@ def mostrar_emociones():
 
         img_pil = Image.open(archivo)
         fname   = convertir_a_jpg(img_pil)
-
         img     = cv2.imread(fname)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         gray    = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -100,7 +94,6 @@ def mostrar_emociones():
 
         img_h, img_w = img.shape[:2]
 
-        # Quedarse solo con el rostro más grande
         if len(faces) > 1:
             faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
             faces = [faces[0]]
@@ -142,7 +135,7 @@ def mostrar_emociones():
             return
 
         ax.axis('off')
-        ax.set_title("Analizador de Emociones — Red Neuronal ONNX", fontsize=12)
+        ax.set_title("Analizador de Emociones — Red Neuronal", fontsize=12)
         plt.tight_layout()
         st.pyplot(fig)
 
