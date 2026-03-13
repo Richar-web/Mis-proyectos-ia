@@ -6,7 +6,6 @@ from collections import Counter
 from PIL import Image
 import tempfile
 import os
-import urllib.request
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -15,40 +14,10 @@ eye_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_eye.xml'
 )
 
-EMOCIONES  = ['angry','disgust','fear','happy','neutral','sad','surprise']
-MODEL_PATH = "/tmp/emotion_model.onnx"
-
 @st.cache_resource
 def cargar_modelo():
-    import onnxruntime as ort
-    if not os.path.exists(MODEL_PATH):
-        with st.spinner("Descargando modelo de emociones..."):
-            url = "https://github.com/microsoft/onnxruntime/raw/main/onnxruntime/test/testdata/emotion_ferplus_8.onnx"
-            try:
-                urllib.request.urlretrieve(url, MODEL_PATH)
-            except Exception:
-                url2 = "https://media.githubusercontent.com/media/onnx/models/main/validated/vision/body_analysis/emotion_ferplus/model/emotion-ferplus-8.onnx"
-                urllib.request.urlretrieve(url2, MODEL_PATH)
-    return ort.InferenceSession(MODEL_PATH)
-
-def preprocesar_rostro(face_rgb):
-    gray = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2GRAY)
-    gray = cv2.resize(gray, (64, 64))
-    gray = gray.astype(np.float32)
-    gray -= gray.mean()
-    std  = gray.std()
-    if std > 0:
-        gray /= std
-    return gray.reshape(1, 1, 64, 64)
-
-def predecir_emocion(session, face_rgb):
-    inp   = preprocesar_rostro(face_rgb)
-    name  = session.get_inputs()[0].name
-    out   = session.run(None, {name: inp})[0][0]
-    exp   = np.exp(out - out.max())
-    probs = exp / exp.sum()
-    idx   = int(np.argmax(probs))
-    return EMOCIONES[idx], float(probs[idx]) * 100
+    from hsemotion_onnx.facial_emotions import HSEmotionRecognizer
+    return HSEmotionRecognizer(model_name='enet_b0_8_best_afew')
 
 def es_rostro_real(gray_rostro):
     h     = gray_rostro.shape[0]
@@ -73,7 +42,7 @@ def mostrar_emociones():
     )
 
     if archivo is not None:
-        session = cargar_modelo()
+        fer = cargar_modelo()
 
         img_pil = Image.open(archivo)
         fname   = convertir_a_jpg(img_pil)
@@ -117,8 +86,13 @@ def mostrar_emociones():
             gray_rostro = gray[y:y+h, x:x+w]
             if not es_rostro_real(gray_rostro):
                 continue
-            rostro_rgb         = img_rgb[y:y+h, x:x+w]
-            emocion, confianza = predecir_emocion(session, rostro_rgb)
+
+            rostro_rgb = img_rgb[y:y+h, x:x+w]
+
+            with st.spinner("Analizando emoción..."):
+                emocion, scores = fer.predict_emotions(rostro_rgb, logits=False)
+                confianza = float(np.max(scores)) * 100
+
             ax.add_patch(plt.Rectangle(
                 (x, y), w, h,
                 fill=False, color='green', linewidth=2
@@ -138,7 +112,7 @@ def mostrar_emociones():
             return
 
         ax.axis('off')
-        ax.set_title("Analizador de Emociones — Red Neuronal ONNX", fontsize=12)
+        ax.set_title("Analizador de Emociones — HSEmotion", fontsize=12)
         plt.tight_layout()
         st.pyplot(fig)
 
