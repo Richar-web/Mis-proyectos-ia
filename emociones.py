@@ -15,40 +15,46 @@ eye_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_eye.xml'
 )
 
-EMOCIONES   = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
-MODEL_URL   = "https://github.com/oarriaga/face_classification/raw/master/trained_models/fer2013_mini_XCEPTION.102-0.66.hdf5"
-MODEL_PATH  = "/tmp/emotion_model.onnx"
-
-ONNX_URL    = "https://huggingface.co/spaces/asdasdasdasd/Face-forgery-detection/resolve/main/emotions.onnx"
+EMOCIONES  = ['angry','disgust','fear','happy','neutral','sad','surprise']
+MODEL_PATH = "/tmp/emotion_model.onnx"
 
 @st.cache_resource
 def cargar_modelo():
     import onnxruntime as ort
     if not os.path.exists(MODEL_PATH):
-        with st.spinner("Descargando modelo..."):
-            urllib.request.urlretrieve(ONNX_URL, MODEL_PATH)
+        with st.spinner("Descargando modelo de emociones..."):
+            url = "https://github.com/microsoft/onnxruntime/raw/main/onnxruntime/test/testdata/emotion_ferplus_8.onnx"
+            try:
+                urllib.request.urlretrieve(url, MODEL_PATH)
+            except Exception:
+                url2 = "https://media.githubusercontent.com/media/onnx/models/main/validated/vision/body_analysis/emotion_ferplus/model/emotion-ferplus-8.onnx"
+                urllib.request.urlretrieve(url2, MODEL_PATH)
     return ort.InferenceSession(MODEL_PATH)
 
 def preprocesar_rostro(face_rgb):
     gray = cv2.cvtColor(face_rgb, cv2.COLOR_RGB2GRAY)
-    gray = cv2.resize(gray, (48, 48))
-    gray = gray.astype(np.float32) / 255.0
-    return gray.reshape(1, 1, 48, 48)
+    gray = cv2.resize(gray, (64, 64))
+    gray = gray.astype(np.float32)
+    gray -= gray.mean()
+    std  = gray.std()
+    if std > 0:
+        gray /= std
+    return gray.reshape(1, 1, 64, 64)
 
 def predecir_emocion(session, face_rgb):
-    inp    = preprocesar_rostro(face_rgb)
-    name   = session.get_inputs()[0].name
-    out    = session.run(None, {name: inp})[0][0]
-    exp    = np.exp(out - out.max())
-    probs  = exp / exp.sum()
-    idx    = int(np.argmax(probs))
+    inp   = preprocesar_rostro(face_rgb)
+    name  = session.get_inputs()[0].name
+    out   = session.run(None, {name: inp})[0][0]
+    exp   = np.exp(out - out.max())
+    probs = exp / exp.sum()
+    idx   = int(np.argmax(probs))
     return EMOCIONES[idx], float(probs[idx]) * 100
 
 def es_rostro_real(gray_rostro):
     h     = gray_rostro.shape[0]
     mitad = gray_rostro[:h//2, :]
     ojos  = eye_cascade.detectMultiScale(
-        mitad, scaleFactor=1.1, minNeighbors=3, minSize=(10, 10)
+        mitad, scaleFactor=1.1, minNeighbors=3, minSize=(10,10)
     )
     return len(ojos) >= 1
 
@@ -63,7 +69,7 @@ def mostrar_emociones():
 
     archivo = st.file_uploader(
         "Sube tu imagen",
-        type=["jpg", "jpeg", "png", "webp"]
+        type=["jpg","jpeg","png","webp"]
     )
 
     if archivo is not None:
@@ -78,12 +84,12 @@ def mostrar_emociones():
 
         faces = face_cascade.detectMultiScale(
             gray_eq, scaleFactor=1.1,
-            minNeighbors=6, minSize=(60, 60)
+            minNeighbors=6, minSize=(60,60)
         )
         if len(faces) == 0:
             faces = face_cascade.detectMultiScale(
                 gray_eq, scaleFactor=1.05,
-                minNeighbors=3, minSize=(40, 40)
+                minNeighbors=3, minSize=(40,40)
             )
 
         if len(faces) == 0:
@@ -108,14 +114,11 @@ def mostrar_emociones():
         for (x, y, w, h) in faces:
             if (w * h) / (img_w * img_h) > 0.80:
                 continue
-
             gray_rostro = gray[y:y+h, x:x+w]
             if not es_rostro_real(gray_rostro):
                 continue
-
             rostro_rgb         = img_rgb[y:y+h, x:x+w]
             emocion, confianza = predecir_emocion(session, rostro_rgb)
-
             ax.add_patch(plt.Rectangle(
                 (x, y), w, h,
                 fill=False, color='green', linewidth=2
@@ -135,7 +138,7 @@ def mostrar_emociones():
             return
 
         ax.axis('off')
-        ax.set_title("Analizador de Emociones — Red Neuronal", fontsize=12)
+        ax.set_title("Analizador de Emociones — Red Neuronal ONNX", fontsize=12)
         plt.tight_layout()
         st.pyplot(fig)
 
