@@ -6,3 +6,4 @@ torch
 torchvision
 numpy
 onnxruntime
+hsemotion-onnx
