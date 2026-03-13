@@ -1,0 +1,53 @@
+/* DISEÑO TOTAL: HTML + CSS */
+
+/* Fondo y fuente general */
+.main {
+    background-color: #0e1117;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Títulos con efecto Neón */
+.titulo-neon {
+    color: #00ffcc;
+    text-align: center;
+    font-size: 3rem;
+    font-weight: bold;
+    text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+    padding: 20px;
+    border-bottom: 2px solid #1f2937;
+    margin-bottom: 30px;
+}
+
+/* Tarjetas de Resumen (HTML Personalizado) */
+.card-html {
+    background: linear-gradient(145deg, #1f2937, #111827);
+    border: 1px solid #374151;
+    border-left: 5px solid #00ffcc;
+    padding: 25px;
+    border-radius: 15px;
+    box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+    color: #e5e7eb;
+    margin: 15px 0px;
+}
+
+/* Botones con estilo Gamer/IA */
+.stButton>button {
+    background: linear-gradient(90deg, #00ffcc, #00aba9);
+    color: #0e1117 !important;
+    border: none;
+    padding: 10px 25px;
+    border-radius: 8px;
+    font-weight: bold;
+    transition: 0.3s;
+    text-transform: uppercase;
+}
+
+.stButton>button:hover {
+    box-shadow: 0 0 15px #00ffcc;
+    transform: scale(1.02);
+}
+
+/* Estilo para el menú lateral */
+.css-1d391kg {
+    background-color: #111827;
+}
