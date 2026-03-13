@@ -2,7 +2,6 @@ streamlit
 opencv-python-headless
 matplotlib
 pillow
-torch
-torchvision
 numpy
-onnxruntime
+deepface
+tf-keras
