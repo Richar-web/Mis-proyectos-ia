@@ -121,14 +121,3 @@ def mostrar_emociones():
             st.success(f"✅ {emo.capitalize()}: {cant} rostro(s)")
 
         os.unlink(fname)
-```
-
-Y actualiza `requirements.txt` quitando `fer`:
-```
-streamlit
-opencv-python-headless
-matplotlib
-pillow
-torch
-torchvision
-numpy
