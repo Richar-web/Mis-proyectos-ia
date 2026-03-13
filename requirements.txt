@@ -1,8 +1,9 @@
-tensorflow
+streamlit
+tensorflow-cpu
 torch
 torchvision
+deepface
 opencv-python-headless
+matplotlib
 numpy
-pillow
-streamlit
 pandas
