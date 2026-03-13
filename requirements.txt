@@ -1,5 +1,6 @@
 streamlit
 fer
+setuptools
 opencv-python-headless
 matplotlib
 pillow
