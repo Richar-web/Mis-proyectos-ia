@@ -1,4 +1,6 @@
 streamlit
-tensorflow-cpu
-opencv-python-headless
 deepface
+tensorflow==2.15.0
+opencv-python-headless
+matplotlib
+pillow
