@@ -1,8 +1,8 @@
 streamlit
-fer
-setuptools
 opencv-python-headless
 matplotlib
 pillow
 torch
 torchvision
+numpy
+onnxruntime
